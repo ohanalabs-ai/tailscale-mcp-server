@@ -42,6 +42,30 @@ export function isAllowedHost(
   );
 }
 
+// JSON-RPC methods a client may call WITHOUT authentication so registries,
+// catalogs, and agents can discover the toolset. Tool execution ("tools/call")
+// and everything else still require a valid bearer token.
+const PUBLIC_MCP_METHODS = new Set([
+  "initialize",
+  "notifications/initialized",
+  "tools/list",
+  "prompts/list",
+  "resources/list",
+  "resources/templates/list",
+  "ping",
+]);
+
+export function isPublicMcpRequest(
+  req: Pick<Request, "method" | "body">,
+): boolean {
+  if (req.method !== "POST") {
+    return false;
+  }
+
+  const method = (req.body as { method?: unknown } | undefined)?.method;
+  return typeof method === "string" && PUBLIC_MCP_METHODS.has(method);
+}
+
 export function createHttpAuthMiddleware(config: AppConfig) {
   const extraHosts = config.MCP_ALLOWED_HOSTS?.split(",")
     .map((host) => host.trim())
@@ -50,6 +74,11 @@ export function createHttpAuthMiddleware(config: AppConfig) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!isAllowedHost(req.headers.host, extraHosts)) {
       res.status(403).json({ error: "Forbidden host" });
+      return;
+    }
+
+    if (isPublicMcpRequest(req)) {
+      next();
       return;
     }
 
