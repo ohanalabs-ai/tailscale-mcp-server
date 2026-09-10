@@ -21,6 +21,20 @@ describe("loadConfig", () => {
     );
   });
 
+  test("allows missing Tailscale credentials when a credential store is enabled", () => {
+    for (const store of ["memory", "redis"] as const) {
+      const config = loadConfig({ MCP_CREDENTIAL_STORE: store });
+      expect(config.TAILSCALE_API_KEY).toBeUndefined();
+      expect(config.MCP_CREDENTIAL_STORE).toBe(store);
+    }
+  });
+
+  test("MCP_CREDENTIAL_STORE defaults to 'none' and still requires a credential", () => {
+    const config = loadConfig({ TAILSCALE_API_KEY: "tskey-test" });
+    expect(config.MCP_CREDENTIAL_STORE).toBe("none");
+    expect(() => loadConfig({})).toThrow();
+  });
+
   test("requires bearer token for HTTP transport", () => {
     expect(() =>
       loadConfig({
