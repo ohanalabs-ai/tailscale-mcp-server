@@ -304,7 +304,18 @@ export function registerOAuthRoutes(
         },
         logger,
       );
-      const validation = await probe.getTailnetInfo();
+      // NOTE: deliberately NOT probe.getTailnetInfo() -- that calls bare
+      // GET /tailnet/{tailnet}, which Tailscale's current API no longer
+      // exposes as a GET (only DELETE; confirmed against the live OpenAPI
+      // spec, see okf/tailscale/openapi.yaml in the claude-agents repo) --
+      // it now 405s regardless of credential validity. getTailnetSettings()
+      // (GET /tailnet/{tailnet}/settings) is a currently-working, read-tier
+      // endpoint and serves the same "does this credential/tailnet pair
+      // work" purpose. The pre-existing get_tailnet_info tool and
+      // TailscaleService.getTailnetSummary() still call the broken
+      // getTailnetInfo() internally -- that is a separate, already-existing
+      // bug, not fixed here.
+      const validation = await probe.getTailnetSettings();
       if (!validation.success) {
         res.type("html").send(
           authorizeHtml({
