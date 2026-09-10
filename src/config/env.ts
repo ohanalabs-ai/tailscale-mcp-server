@@ -47,6 +47,14 @@ const EnvSchema = z
     TAILSCALE_ALLOWED_TOOL_RISK: ToolRiskSchema.default("read"),
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
     MCP_SERVER_LOG_FILE: z.string().optional(),
+    // Mirrors the enum in src/credentials/config.ts. Duplicated here (rather
+    // than importing that module) only to answer one question at this layer:
+    // does an operator-level Tailscale credential still need to exist? When a
+    // credential store is enabled, customers can supply their own via the
+    // OAuth login flow (src/oauth/), so the operator doesn't have to. The
+    // store's own config (Redis URL, TTL, etc.) is still validated
+    // separately by credentialConfigFromEnv().
+    MCP_CREDENTIAL_STORE: z.enum(["none", "memory", "redis"]).default("none"),
   })
   .superRefine((env, ctx) => {
     const hasOauth =
@@ -56,6 +64,7 @@ const EnvSchema = z
       Boolean(env.TAILSCALE_OAUTH_CLIENT_ID) !==
       Boolean(env.TAILSCALE_OAUTH_CLIENT_SECRET);
     const hasApiKey = Boolean(env.TAILSCALE_API_KEY);
+    const customersCanBringTheirOwn = env.MCP_CREDENTIAL_STORE !== "none";
 
     if (hasPartialOauth) {
       ctx.addIssue({
@@ -66,11 +75,12 @@ const EnvSchema = z
       });
     }
 
-    if (!hasOauth && !hasApiKey) {
+    if (!hasOauth && !hasApiKey && !customersCanBringTheirOwn) {
       ctx.addIssue({
         code: "custom",
         path: ["TAILSCALE_OAUTH_CLIENT_ID"],
-        message: "Set OAuth credentials or TAILSCALE_API_KEY",
+        message:
+          "Set OAuth credentials or TAILSCALE_API_KEY, or enable MCP_CREDENTIAL_STORE so customers can authenticate via OAuth login instead",
       });
     }
 
@@ -127,6 +137,7 @@ Usage:
 Required auth:
   TAILSCALE_OAUTH_CLIENT_ID and TAILSCALE_OAUTH_CLIENT_SECRET
   or TAILSCALE_API_KEY
+  or MCP_CREDENTIAL_STORE=memory|redis (customers authenticate via OAuth login instead)
 
 HTTP mode also requires:
   MCP_HTTP_BEARER_TOKEN
