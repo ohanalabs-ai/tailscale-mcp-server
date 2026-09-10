@@ -270,6 +270,11 @@ Add to `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global):
 | `MCP_ALLOWED_HOSTS` | — | Comma-separated additional allowed HTTP Host header values |
 | `LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, or `error` |
 | `MCP_SERVER_LOG_FILE` | — | Optional file path for log output |
+| `MCP_CREDENTIAL_STORE` | `none` | Outbound credential store backend for OAuth-authorized customers: `none`, `memory`, or `redis` |
+| `MCP_REDIS_URL` | — | Required when `MCP_CREDENTIAL_STORE=redis` |
+| `MCP_REDIS_KEY_PREFIX` | `tailscale-mcp:credentials:v1:` | Redis key namespace/schema-version prefix |
+| `MCP_REDIS_OPERATION_TIMEOUT_MS` | `5000` | Per-Redis-command timeout |
+| `MCP_CREDENTIAL_TTL_MS` | `7200000` (2h) | How long an OAuth-issued credential is cached (bounded 1m–7d) |
 
 ### Risk levels
 
@@ -304,6 +309,38 @@ Do not use Tailscale Funnel for normal MCP operation. Funnel makes the endpoint 
 A `GET /health` endpoint returns `200 OK` when the server is running.
 
 For full Docker sidecar deployment instructions, see [docs/docker.md](docs/docker.md).
+
+### OAuth login flow (customer credentials)
+
+In addition to the static `MCP_HTTP_BEARER_TOKEN` (the server operator's own
+admin/dev path, unchanged), the server exposes a self-hosted OAuth 2.1
+authorization flow so a **customer** can authorize their own MCP session
+with their own Tailscale API key and tailnet, without ever seeing the
+operator's bearer token:
+
+1. **Discovery** — MCP clients enumerate the toolset with no credential at
+   all: `initialize`, `tools/list`, `prompts/list`, `resources/list`, and
+   `ping` succeed unauthenticated. `tools/call` still requires either the
+   static bearer token or a resolved OAuth credential (below).
+2. **Register** — `POST /register` (RFC 7591 Dynamic Client Registration).
+3. **Authorize** — `GET /authorize` (with mandatory PKCE) redirects the
+   browser to a login page collecting the customer's **Tailnet ID**, **API
+   Key**, and an **access-level** choice (Read-Only / Read-Write /
+   Write-Admin). The server validates the submitted credential against the
+   real Tailscale API before issuing an authorization code.
+4. **Token** — `POST /token` exchanges the code (PKCE-verified) for an
+   opaque access token.
+5. **Call** — `Authorization: Bearer <access_token>` against `/mcp` resolves
+   that customer's own credential and risk tier for every subsequent tool
+   call — `tools/list` only advertises tools at or below their chosen access
+   level, and it can never exceed the server operator's own
+   `TAILSCALE_ALLOWED_TOOL_RISK` ceiling.
+
+Discovery metadata is served at `/.well-known/oauth-authorization-server`
+and `/.well-known/mcp/server-card.json`. The issued credential is cached in
+the store configured via `MCP_CREDENTIAL_STORE` (see the Configuration table
+above) — `memory` by default when enabled, or `redis` for multi-replica
+deployments.
 
 ---
 

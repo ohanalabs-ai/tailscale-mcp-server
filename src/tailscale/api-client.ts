@@ -265,6 +265,18 @@ export class TailscaleApiClient {
               ? String(data.error)
               : `HTTP ${response.status}`;
 
+        // The error above is often just "HTTP <status>" with no detail
+        // (e.g. a 405 whose body isn't the usual {message}/{error} JSON
+        // shape). Log the raw response so a non-obvious failure -- wrong
+        // method, an endpoint Tailscale's API no longer exposes, etc. --
+        // is diagnosable without re-running with a debugger attached.
+        this.logger.debug("Tailscale API request rejected", {
+          method: options.method ?? "GET",
+          path,
+          status: response.status,
+          body: typeof data === "string" ? data.slice(0, 2000) : data,
+        });
+
         return { success: false, error, statusCode: response.status };
       }
 

@@ -41,6 +41,7 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     TAILSCALE_ALLOWED_TOOL_RISK: "read",
     LOG_LEVEL: "error",
     MCP_SERVER_LOG_FILE: undefined,
+    MCP_CREDENTIAL_STORE: "none",
     ...overrides,
   } as AppConfig;
 }

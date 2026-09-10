@@ -1,10 +1,19 @@
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import type { Request } from "express";
 import express from "express";
 import { createMcpServer } from "../../app/create-server.js";
 import type { AppConfig } from "../../config/env.js";
+import { credentialConfigFromEnv } from "../../credentials/config.js";
+import { createCredentialStore } from "../../credentials/factory.js";
+import { MemoryCredentialStore } from "../../credentials/memoryStore.js";
+import { registerOAuthRoutes } from "../../oauth/routes.js";
+import { OAuthStore } from "../../oauth/store.js";
 import type { AppLogger } from "../../observability/logger.js";
-import { createHttpAuthMiddleware } from "../../security/auth.js";
+import {
+  createHttpAuthMiddleware,
+  type TailscaleRequestCredential,
+} from "../../security/auth.js";
 import { createRateLimitMiddleware } from "../../security/rate-limit.js";
 import { TailscaleService } from "../../tailscale/service.js";
 
@@ -16,6 +25,17 @@ export async function startHttpTransport({
   logger: AppLogger;
 }): Promise<void> {
   const tailscale = await TailscaleService.create({ config, logger });
+
+  const credentialConfig = credentialConfigFromEnv();
+  const credentialStore =
+    (await createCredentialStore(credentialConfig, logger)) ??
+    new MemoryCredentialStore();
+  const oauthStore = new OAuthStore(
+    credentialStore,
+    config.TAILSCALE_API_BASE_URL,
+    credentialConfig.ttlMs,
+  );
+
   const app = createMcpExpressApp();
 
   app.disable("x-powered-by");
@@ -26,10 +46,37 @@ export async function startHttpTransport({
     res.json({ status: "ok" });
   });
 
-  app.use("/mcp", createHttpAuthMiddleware(config));
+  // Public OAuth 2.1 login flow -- lets a customer authorize this MCP
+  // session with their own Tailscale API key + tailnet instead of the
+  // server operator's static MCP_HTTP_BEARER_TOKEN. See src/oauth/.
+  registerOAuthRoutes(app, oauthStore, config, logger);
+
+  app.use("/mcp", createHttpAuthMiddleware(config, oauthStore));
 
   app.post("/mcp", async (req, res) => {
-    const server = await createMcpServer({ config, logger, tailscale });
+    const credential = (
+      req as Request & { tailscaleCredential?: TailscaleRequestCredential }
+    ).tailscaleCredential;
+
+    const effectiveConfig: AppConfig = credential
+      ? {
+          ...config,
+          TAILSCALE_API_KEY: credential.apiKey,
+          TAILSCALE_TAILNET: credential.tailnet,
+          TAILSCALE_ALLOWED_TOOL_RISK: credential.allowedRisk,
+          TAILSCALE_OAUTH_CLIENT_ID: undefined,
+          TAILSCALE_OAUTH_CLIENT_SECRET: undefined,
+        }
+      : config;
+    const effectiveTailscale = credential
+      ? await TailscaleService.create({ config: effectiveConfig, logger })
+      : tailscale;
+
+    const server = await createMcpServer({
+      config: effectiveConfig,
+      logger,
+      tailscale: effectiveTailscale,
+    });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
     });

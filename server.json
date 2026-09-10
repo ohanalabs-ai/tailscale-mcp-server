@@ -93,6 +93,35 @@
           "name": "MCP_SERVER_LOG_FILE",
           "description": "Optional file path for log output. When unset, logs go to stderr.",
           "required": false
+        },
+        {
+          "name": "MCP_CREDENTIAL_STORE",
+          "description": "Outbound credential store backend for OAuth-authorized customers ('none', 'memory', or 'redis'). 'none' disables the OAuth credential layer entirely.",
+          "required": false,
+          "default": "none"
+        },
+        {
+          "name": "MCP_REDIS_URL",
+          "description": "Redis connection URL. Required when MCP_CREDENTIAL_STORE=redis.",
+          "required": false
+        },
+        {
+          "name": "MCP_REDIS_KEY_PREFIX",
+          "description": "Redis key namespace/schema-version prefix for the credential store.",
+          "required": false,
+          "default": "tailscale-mcp:credentials:v1:"
+        },
+        {
+          "name": "MCP_REDIS_OPERATION_TIMEOUT_MS",
+          "description": "Per-Redis-command timeout in milliseconds.",
+          "required": false,
+          "default": "5000"
+        },
+        {
+          "name": "MCP_CREDENTIAL_TTL_MS",
+          "description": "How long an OAuth-issued credential is cached, in milliseconds (bounded 60000-604800000).",
+          "required": false,
+          "default": "7200000"
         }
       ]
     }
