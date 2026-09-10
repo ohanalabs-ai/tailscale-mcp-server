@@ -6,10 +6,13 @@ import { registerOAuthRoutes } from "../../oauth/routes.js";
 import { OAuthStore } from "../../oauth/store.js";
 import { makeConfig, silentLogger } from "../mcp/helpers.js";
 
-// A tiny fake Tailscale API: /api/v2/tailnet/:tailnet succeeds for tailnet
-// "good.example.com" and 401s for anything else, so tests can exercise both
-// the success and failure paths of the credential-validation probe in
-// POST /authorize without hitting the real network.
+// A tiny fake Tailscale API: /api/v2/tailnet/:tailnet/settings succeeds for
+// tailnet "good.example.com" and 401s for anything else, so tests can
+// exercise both the success and failure paths of the credential-validation
+// probe in POST /authorize without hitting the real network. Uses /settings,
+// not the bare /tailnet/:tailnet path -- Tailscale's real API no longer
+// exposes that as a GET (confirmed 405 against the live API; see the
+// getTailnetSettings() switch in oauth/routes.ts).
 function startFakeTailscaleApi(): Promise<{
   url: string;
   close: () => Promise<void>;
@@ -19,8 +22,8 @@ function startFakeTailscaleApi(): Promise<{
       port: 0,
       fetch(req) {
         const url = new URL(req.url);
-        if (url.pathname === "/api/v2/tailnet/good.example.com") {
-          return Response.json({ name: "good.example.com" });
+        if (url.pathname === "/api/v2/tailnet/good.example.com/settings") {
+          return Response.json({ devicesApprovalOn: false });
         }
         return Response.json({ message: "unauthorized" }, { status: 401 });
       },
